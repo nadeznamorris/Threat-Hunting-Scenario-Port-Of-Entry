@@ -1,16 +1,38 @@
 # Threat-Huntung-Scenario-Port-Of-Entry
 
+**Report ID:** INC-2025-2211
+
+**Analyst:** Nadezna Morris
+
+**Date:** 22-November-2025
+
+**Incident Date:** 19-November-2025
+
 ## Executive Summary  
 
 Azuki Import/Export Trading Co. suffered a targeted corporate espionage intrusion resulting in the confirmed exfiltration of sensitive supplier contracts and pricing data. The attack began with unauthorised Remote Desktop Protocol (RDP) access using compromised IT administrator credentials (`kenji.sato`) originating from external IP `88.97.178.12`. The threat actor demonstrated advanced post-exploitation tradecraft — deploying a renamed Mimikatz binary for credential harvesting, abusing native Windows utilities to evade defences, and establishing persistent access via a scheduled task and a hidden backdoor account. Exfiltrated data was staged into a ZIP archive and exfiltrated over Discord, bypassing conventional data loss prevention controls. The attacker subsequently cleared Security event logs to hinder forensic investigation. The scope of compromise extends beyond `AZUKI-SL`, with confirmed lateral movement to internal host `10.1.0.188`. The intrusion is consistent with a financially motivated adversary engaged in competitive intelligence theft.
 
-
 ## 1. Findings
 
-- **Host:** `azuki-sl` (Windows endpoint)
-- **Telemetry:** Microsoft Defender For Endpoint:
-  - `DeviceLogonEvents`, `DeviceProcessEvents`, `DeviceRegistryEvents`, `DeviceFileEvents`, `DeviceNetworkEvents`
-- **Timeframe:** 2025-11-19 → 2025-11-20 (UTC)
+### Key Indicators of Compromise
+
+| Indicator                               | Description                       |
+| --------------------------------------- | ----------------------------------|
+| 88.97.178.12                            | RDP Initial Access Origin         |
+| 78.141.196.6                            | C2 Server                         |
+| 10.1.0.188                              | Lateral Movement Target           |
+| kenji.sato                              | Compromised IT Admin              |
+| support                                 | Attacker-Created Backdoor Account |
+| C:\ProgramData\WindowsCache\            | Malicious Staging Directory       |
+| C:\ProgramData\WindowsCache\svchost.exe | Persistent Malware Payload        |
+| mm.exe                                  | Renamed Mimikatz Binary           |
+| wupdate.ps1                             | Initial Attack Bootstrap Script   |
+| export-data.zip                         | Exfiltrated Data Archive          |
+| Windows Update Check                    | Persistence Mechanism             |
+| sekurlsa::logonpasswords                | Mimikatz Credential Dump Module   |
+| certutil.exe                            | Used for Remote Tool Download     |
+| mstsc.exe                               | Used for Lateral Movement via RDP |
+| Discord                                 | Exfiltration Channel              |
 
 ---
 
@@ -376,3 +398,71 @@ DeviceNetworkEvents
 <img width="667" height="72" alt="image" src="https://github.com/user-attachments/assets/fa97cb33-7f8b-4a6e-a3c4-9592e37a133c" />
 
 ---
+
+## 2. Investigation Summary
+
+The threat actor gained initial access to `AZUKI-SL` via an unauthorised RDP connection originating from `88.97.178.12`, authenticating with compromised IT administrator credentials for account `kenji.sato`. Upon gaining access, a PowerShell script `wupdate.ps1` was executed to bootstrap the attack chain, after which the attacker created a staging directory at `C:\ProgramData\WindowsCache` and modified Windows Defender by adding three file extension exclusions alongside a folder exclusion for `C:\Users\KENJI~1.SAT\AppData\Local\Temp` to enable undetected tool execution. The native Windows binary `certutil.exe` was then abused to download a renamed Mimikatz binary (`mm.exe`) from a remote source, which was subsequently executed with the `sekurlsa::logonpasswords` module to dump plaintext credentials from LSASS memory. Two persistence mechanisms were established — a scheduled task named `"Windows Update Check"` pointing to `C:\ProgramData\WindowsCache\svchost.exe`, and a hidden local administrator account `support` created for long-term re-entry. A C2 beacon was established to `78.141.196.6` over port `443` to blend with legitimate HTTPS traffic. With harvested credentials, the attacker performed network reconnaissance using `ARP.EXE -a` to enumerate LAN hosts, then laterally moved to 10.1.0.188 using the native RDP client `mstsc.exe`. Collected data was compressed into `export-data.zip` and exfiltrated via Discord, bypassing conventional DLP controls. Finally, the Windows Security event log was cleared to destroy forensic evidence and impede investigation.
+
+---
+
+## 3. MITRE ATT&CK Mapping
+
+| Tactic               | Technique                                                   | Evidence                                                         |
+| -------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------- |
+| Initial Access       | T1133 — External Remote Services                            | Unauthorised RDP from 88.97.178.12                               |
+| Initial Access       | T1078 — Valid Accounts                                      | Compromised kenji.sato IT admin account                          |
+| Execution            | T1059.001 — PowerShell                                      | wupdate.ps1 used to bootstrap the attack                         |
+| Persistence          | T1053.005 - Scheduled Task/Job: Scheduled Task              | "Windows Update Check" → C:\ProgramData\WindowsCache\svchost.exe |
+| Persistence          | T1136.001 - Create Account: Local Account                   | Hidden admin account support created                             |
+| Privilege Escalation | T1078 - Valid Accounts                                      | Admin-level credential reuse post-dump                           | 
+| Defence Evasion      | T1562.001 - Impair Defences: Disable or Modify Tools        | 3 Defender extension exclusions + Temp folder exclusion added    |
+| Defence Evasion      | T1070.001 - Indicator Removal: Clear Windows Event Logs     | Windows Security log cleared                                     |
+| Defence Evasion      | T1036.005 - Masquerading: Match Legitimate Name or Location | Payload named svchost.exe; Mimikatz renamed to mm.exe            |
+| Defence Evasion      | T1218.003 - System Binary Proxy Execution: CMSTP            | certutil.exe abused for tool download (LOLBin)                   |
+| Credential Access    | T1003.001 - OS Credential Dumping: LSASS Memory             | mm.exe (sekurlsa::logonpasswords) dumped LSASS                   |
+| Discovery            | T1018 - Remote System Discovery                             | ARP.EXE -a enumerated LAN hosts                                  |
+| Lateral Movement     | T1021.001 - Remote Services: Remote Desktop Protocol        | mstsc.exe used to move to 10.1.0.188                             |
+| Collection           | T1560.001 - Archive Collected Data: Archive via Utility     | Data compressed into export-data.zip                             |
+| Command & Control    | T1071.001 - Application Layer Protocol: Web Protocols       | C2 traffic to 78.141.196.6 over port 443                         |
+| Command & Control    | T1105 - Ingress Tool Transfer                               | certutil.exe pulled malicious tools from remote source           |
+| Exfiltration         | T1567 - Exfiltration Over Web Service                       | export-data.zip exfiltrated via Discord                          |
+
+---
+
+## 4. Recommendations
+
+### Immediate Action
+
+- Isolate AZUKI-SL and 10.1.0.188 from the network pending full forensic imaging.
+- Disable compromised account kenji.sato and reset credentials for all users who share systems with it.
+- Delete hidden account support and audit all local administrator accounts across the environment.
+- Block threat actor IPs at the perimeter firewall: 88.97.178.12 and 78.141.196.6.
+- Remove the malicious scheduled task "Windows Update Check" and delete C:\ProgramData\WindowsCache.
+- Revoke all Windows Defender exclusions added by the attacker and run a full AV scan.
+
+### Short-Term Remediation
+
+- Enforce MFA on all RDP and remote access points — single-factor credential access was the root cause of this breach.
+- Restrict RDP access to a VPN or jump server; block direct internet-facing RDP (TCP/3389) at the perimeter.
+- Enable Credential Guard on Windows workstations to prevent LSASS memory dumping.
+- Block or audit certutil.exe usage via AppLocker or Windows Defender Application Control (WDAC) — flag any use involving download operations.
+- Block Discord and non-business cloud services at the proxy/firewall level; implement DNS filtering for known exfil-abused domains.
+- Enable Windows Event Log forwarding to a centralised SIEM to ensure log integrity independent of local host state.
+
+### Long-Term Hardening
+
+- Implement a Privileged Access Workstation (PAW) model — IT admin accounts should be restricted to dedicated, hardened machines, not general-use workstations.
+- Deploy an EDR solution with LSASS protection, PowerShell script block logging, and LOLBin monitoring.
+- Enforce PowerShell Constrained Language Mode and require signed scripts to prevent abuse of .ps1 execution.
+- Implement a Data Loss Prevention (DLP) solution to detect and block bulk file compression and upload to personal cloud/messaging services.
+- Conduct regular threat hunting focused on scheduled task creation, new local accounts, and Defender exclusion modification — these are reliable adversary behaviours.
+- Segment the network — a 23-person company with flat LAN topology allowed trivial lateral movement via mstsc.exe. Place file servers and sensitive data hosts in a separate VLAN with access controls.
+- Employee security awareness training covering phishing and credential hygiene, with particular focus on administrative staff.
+
+---
+
+**Report Status:** Complete  
+
+**Next Review:** 29th November 2025
+
+**Distribution:** Cyber Range
