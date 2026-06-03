@@ -1,8 +1,12 @@
 # Threat-Huntung-Scenario-Port-Of-Entry
 
-Azuki Import/Export Trading Co., a small logistics firm operating across Japan and Southeast Asia, recently discovered that confidential supplier contracts and pricing data were leaked and later found circulating on underground forums. The timing coincided with a competitor undercutting their six-year shipping agreement by precisely 3%, strongly suggesting targeted corporate espionage rather than opportunistic data theft. Initial investigation indicates that the breach originated from **AZUKI-SL**, the company’s IT administrator workstation, pointing to a high-value compromise with privileged access likely used to exfiltrate sensitive contract information. The situation demands immediate threat hunting to determine attacker entry point, persistence mechanisms, and the scope of potential insider activity or external intrusion.
+## Executive Summary  
 
-## Environment & Data Sources
+Azuki Import/Export Trading Co. suffered a targeted corporate espionage intrusion resulting in the confirmed exfiltration of sensitive supplier contracts and pricing data. The attack began with unauthorised Remote Desktop Protocol (RDP) access using compromised IT administrator credentials (`kenji.sato`) originating from external IP `88.97.178.12`. The threat actor demonstrated advanced post-exploitation tradecraft — deploying a renamed Mimikatz binary for credential harvesting, abusing native Windows utilities to evade defences, and establishing persistent access via a scheduled task and a hidden backdoor account. Exfiltrated data was staged into a ZIP archive and exfiltrated over Discord, bypassing conventional data loss prevention controls. The attacker subsequently cleared Security event logs to hinder forensic investigation. The scope of compromise extends beyond `AZUKI-SL`, with confirmed lateral movement to internal host `10.1.0.188`. The intrusion is consistent with a financially motivated adversary engaged in competitive intelligence theft.
+
+
+## 1. Findings
+
 - **Host:** `azuki-sl` (Windows endpoint)
 - **Telemetry:** Microsoft Defender For Endpoint:
   - `DeviceLogonEvents`, `DeviceProcessEvents`, `DeviceRegistryEvents`, `DeviceFileEvents`, `DeviceNetworkEvents`
@@ -10,15 +14,12 @@ Azuki Import/Export Trading Co., a small logistics firm operating across Japan a
 
 ---
 
-### Flag 1 - INITIAL ACCESS - Remote Access Source
+***FLAG 1 - INITIAL ACCESS - Remote Access Source***
 
-**Objective :**  
-Remote Desktop Protocol connections leave network traces that identify the source of unauthorised access. Determining the origin helps with threat actor attribution and blocking ongoing attacks.
+**Objective :** Remote Desktop Protocol connections leave network traces that identify the source of unauthorised access. Determining the origin helps with threat actor attribution and blocking ongoing attacks.
 
-**Flag Value :**  
-`88.97.178.12`
+**Flag Value :** `88.97.178.12`
 
-**KQL Query :**
 ```
 DeviceLogonEvents
 | where DeviceName == "azuki-sl"
@@ -26,20 +27,16 @@ DeviceLogonEvents
 | project Timestamp, DeviceName, AccountName, ActionType, RemoteDeviceName, RemoteIP
 | order by Timestamp asc
 ```
-
-<img width="1207" height="187" alt="Flag 1" src="https://github.com/user-attachments/assets/fba952d8-7e50-4214-bca1-089467b218b6" />
+<img width="836" height="77" alt="image" src="https://github.com/user-attachments/assets/37dec1d7-de77-40c3-9139-187ea591e999" />
 
 ---
 
-### Flag 2 - INITIAL ACCESS - Compromised User Account
+***FLAG 2 - INITIAL ACCESS - Compromised User Account***
 
-**Objective :**  
-Identifying which credentials were compromised determines the scope of unauthorised access and guides remediation efforts including password resets and privilege reviews.
+**Objective :** Identifying which credentials were compromised determines the scope of unauthorised access and guides remediation efforts including password resets and privilege reviews.
 
-**Flag Value :**  
-`kenji.sato`
+**Flag Value :** `kenji.sato`
 
-**KQL Query :**
 ```
 DeviceLogonEvents
 | where DeviceName == "azuki-sl"
@@ -47,20 +44,16 @@ DeviceLogonEvents
 | project Timestamp, DeviceName, AccountName, ActionType, RemoteDeviceName, RemoteIP
 | order by Timestamp asc
 ```
-
-<img width="650" height="200" alt="Flag 2" src="https://github.com/user-attachments/assets/59a9c03b-a5b8-4d53-8924-2b75c530e6d5" />
+<img width="836" height="77" alt="image" src="https://github.com/user-attachments/assets/d6af9485-36ec-4fd6-afaa-c1711acab8d3" />
 
 ---
 
-### Flag 3: DISCOVERY - Network Reconnaissance
+***FLAG 3: DISCOVERY - Network Reconnaissance***
 
-**Objective :**  
-Attackers enumerate network topology to identify lateral movement opportunities and high-value targets. This reconnaissance activity is a key indicator of advanced persistent threats.
+**Objective :** Attackers enumerate network topology to identify lateral movement opportunities and high-value targets. This reconnaissance activity is a key indicator of advanced persistent threats.
 
-**Flag Value :**  
-`"ARP.EXE" -a`
+**Flag Value :** `"ARP.EXE" -a`
 
-**KQL Query :**
 ```
 DeviceProcessEvents
 | where DeviceName == "azuki-sl"
@@ -69,20 +62,16 @@ DeviceProcessEvents
 | project Timestamp, DeviceName, FileName, ProcessCommandLine, FolderPath, AccountName
 | order by Timestamp asc 
 ```
-
-<img width="1197" height="127" alt="Flag 3" src="https://github.com/user-attachments/assets/672df639-a24b-4d50-a6ec-296e0c4eaf11" />
+<img width="849" height="70" alt="image" src="https://github.com/user-attachments/assets/7ef75c80-c662-44c7-94e7-540f123a316b" />
 
 ---
 
-### Flag 4: DEFENCE EVASION - Malware Staging Directory
+***FLAG 4: DEFENCE EVASION - Malware Staging Directory***
 
-**Objective :**  
-Attackers establish staging locations to organise tools and stolen data. Identifying these directories reveals the scope of compromise and helps locate additional malicious artefacts.
+**Objective :** Attackers establish staging locations to organise tools and stolen data. Identifying these directories reveals the scope of compromise and helps locate additional malicious artefacts.
 
-**Flag Value :**  
-`C:\ProgramData\WindowsCache`
+**Flag Value :** `C:\ProgramData\WindowsCache`
 
-**KQL Query :**
 ```
 DeviceProcessEvents
 | where DeviceName == "azuki-sl"
@@ -91,20 +80,16 @@ DeviceProcessEvents
 | project Timestamp, DeviceName, ActionType, FileName, ProcessCommandLine
 | order by Timestamp asc
 ```
-
-<img width="660" height="190" alt="Flag 4" src="https://github.com/user-attachments/assets/b3bb6d77-5afc-4edb-a967-b16b4faa3914" />
+<img width="872" height="81" alt="image" src="https://github.com/user-attachments/assets/2710c448-aa1e-4583-ad4a-ec08f3f0b91a" />
 
 ---
 
-### Flag 5: DEFENCE EVASION - File Extension Exclusions
+***FLAG 5: DEFENCE EVASION - File Extension Exclusions***
 
-**Objective :**  
-Attackers add file extension exclusions to Windows Defender to prevent scanning of malicious files. Counting these exclusions reveals the scope of the attacker's defense evasion strategy.
+**Objective :** Attackers add file extension exclusions to Windows Defender to prevent scanning of malicious files. Counting these exclusions reveals the scope of the attacker's defense evasion strategy.
 
-**Flag Value :**  
-`3`
+**Flag Value :** `3`
 
-**KQL Query :**
 ```
 DeviceRegistryEvents
 | where DeviceName == "azuki-sl"
@@ -113,20 +98,16 @@ DeviceRegistryEvents
 | project Timestamp, DeviceName, ActionType, RegistryValueName, RegistryKey
 | order by Timestamp asc 
 ```
-
-<img width="1481" height="173" alt="Flag 5" src="https://github.com/user-attachments/assets/d99cc4d8-f7d1-49eb-a3e0-441d577832fd" />
+<img width="1283" height="148" alt="Flag 5" src="https://github.com/user-attachments/assets/d0d40c2c-876c-4d78-8e19-5cfec1335fee" />
 
 ---
 
-### Flag 6: DEFENCE EVASION - Temporary Folder Exclusion
+***FLAG 6: DEFENCE EVASION - Temporary Folder Exclusion***
 
-**Objective :**  
-Attackers add folder path exclusions to Windows Defender to prevent scanning of directories used for downloading and executing malicious tools. These exclusions allow malware to run undetected.
+**Objective :** Attackers add folder path exclusions to Windows Defender to prevent scanning of directories used for downloading and executing malicious tools. These exclusions allow malware to run undetected.
 
-**Flag Value :**  
-`C:\Users\KENJI~1.SAT\AppData\Local\Temp`
+**Flag Value :** `C:\Users\KENJI~1.SAT\AppData\Local\Temp`
 
-**KQL Query :**
 ```
 DeviceRegistryEvents
 | where DeviceName == "azuki-sl"
@@ -135,20 +116,16 @@ DeviceRegistryEvents
 | project Timestamp, DeviceName, ActionType, RegistryValueName, RegistryKey, InitiatingProcessFolderPath
 | order by Timestamp asc
 ```
-
-<img width="720" height="220" alt="Flag 6" src="https://github.com/user-attachments/assets/fb1f194a-595d-4f21-8306-c81fb5b491b6" />
+<img width="1366" height="83" alt="image" src="https://github.com/user-attachments/assets/4a98ee39-2742-4757-866f-e70fd9acfcd6" />
 
 ---
 
-### Flag 7: DEFENCE EVASION - Download Utility Abuse
+***FLAG 7: DEFENCE EVASION - Download Utility Abuse***
 
-**Objective :**  
-Legitimate system utilities are often weaponized to download malware while evading detection. Identifying these techniques helps improve defensive controls.
+**Objective :** Legitimate system utilities are often weaponized to download malware while evading detection. Identifying these techniques helps improve defensive controls.
 
-**Flag Value :**  
-`certutil.exe`
+**Flag Value :** `certutil.exe`
 
-**KQL Query :**
 ```
 DeviceProcessEvents
 | where DeviceName == "azuki-sl"
@@ -157,20 +134,16 @@ DeviceProcessEvents
 | project Timestamp, DeviceName, ActionType, FileName, ProcessCommandLine
 | order by Timestamp asc
 ```
-
-<img width="1377" height="92" alt="Flag 7" src="https://github.com/user-attachments/assets/34b51065-1cfa-41e3-9bde-781468f98051" />
+<img width="952" height="96" alt="image" src="https://github.com/user-attachments/assets/f66c0e24-887d-4fcc-9e79-85963a1e19cb" />
 
 ---
 
-### Flag 8: PERSISTENCE - Scheduled Task Name
+***FLAG 8: PERSISTENCE - Scheduled Task Name***
 
-**Objective :**  
-Scheduled tasks provide reliable persistence across system reboots. The task name often attempts to blend with legitimate Windows maintenance routines.
+**Objective :** Scheduled tasks provide reliable persistence across system reboots. The task name often attempts to blend with legitimate Windows maintenance routines.
 
-**Flag Value :**  
-`Windows Update Check`
+**Flag Value :** `Windows Update Check`
 
-**KQL Query :**
 ```
 DeviceProcessEvents
 | where DeviceName == "azuki-sl"
@@ -179,42 +152,34 @@ DeviceProcessEvents
 | project Timestamp, DeviceName, ActionType, FileName, ProcessCommandLine
 | order by Timestamp asc 
 ```
-
-<img width="1278" height="136" alt="Flag 8" src="https://github.com/user-attachments/assets/6f1a2e11-bf7f-4cda-a4fd-c5dace672a29" />
+<img width="947" height="72" alt="image" src="https://github.com/user-attachments/assets/49cba3a9-d00b-408c-b61e-8093cfed8b53" />
 
 ---
 
-### Flag 9: PERSISTENCE - Scheduled Task Target
+***FLAG 9: PERSISTENCE - Scheduled Task Target***
 
-**Objective :**  
-Scheduled tasks provide reliable persistence across system reboots. The task name often attempts to blend with legitimate Windows maintenance routines.
+**Objective :** Scheduled tasks provide reliable persistence across system reboots. The task name often attempts to blend with legitimate Windows maintenance routines.
 
-**Flag Value :**  
-`C:\ProgramData\WindowsCache\svchost.exe`
+**Flag Value :** `C:\ProgramData\WindowsCache\svchost.exe`
 
-**KQL Query :**
 ```
 DeviceProcessEvents
 | where DeviceName == "azuki-sl"
 | where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
 | where ProcessCommandLine has_any ("schtasks")
-| project Timestamp, DeviceName, ActionType, FileName, ProcessCommandLine
+| project Timestamp, DeviceName, FileName, ProcessCommandLine
 | order by Timestamp asc
 ```
-
-<img width="1247" height="243" alt="Flag 9" src="https://github.com/user-attachments/assets/83cecf0e-bd68-43c4-a2b5-f29a3fb7c6f1" />
+<img width="1158" height="85" alt="image" src="https://github.com/user-attachments/assets/f0593eca-2b9b-43a5-ae52-fe9f3d49d6b2" />
 
 ---
 
-### Flag 10: COMMAND & CONTROL - C2 Server Address
+***FLAG 10: COMMAND & CONTROL - C2 Server Address***
 
-**Objective :**  
-Command and control infrastructure allows attackers to remotely control compromised systems. Identifying C2 servers enables network blocking and infrastructure tracking.
+**Objective :** Command and control infrastructure allows attackers to remotely control compromised systems. Identifying C2 servers enables network blocking and infrastructure tracking.
 
-**Flag Value :**  
-`78.141.196.6`
+**Flag Value :** `78.141.196.6`
 
-**KQL Query :**
 ```
 DeviceNetworkEvents
 | where DeviceName == "azuki-sl"
@@ -223,20 +188,16 @@ DeviceNetworkEvents
 | project Timestamp, DeviceName, InitiatingProcessFileName, InitiatingProcessCommandLine, RemoteUrl, RemoteIP
 | order by Timestamp asc 
 ```
-
-<img width="650" height="190" alt="Flag 10" src="https://github.com/user-attachments/assets/047d4dc6-c1c5-464f-88f0-2bdad377abc7" />
+<img width="857" height="72" alt="image" src="https://github.com/user-attachments/assets/df623bb2-712a-4bb4-a593-3430b857fe0e" />
 
 ---
 
-### Flag 11: COMMAND & CONTROL - C2 Communication Port
+***FLAG 11: COMMAND & CONTROL - C2 Communication Port***
 
-**Objective :**  
-C2 communication ports can indicate the framework or protocol used. This information supports network detection rules and threat intelligence correlation.
+**Objective :** C2 communication ports can indicate the framework or protocol used. This information supports network detection rules and threat intelligence correlation.
 
-**Flag Value :**  
-`2025-11-19T19:10:37.2912992Z`
+**Flag Value :** `443`
 
-**KQL Query :**
 ```
 DeviceNetworkEvents
 | where DeviceName == "azuki-sl"
@@ -245,111 +206,91 @@ DeviceNetworkEvents
 | project Timestamp, DeviceName, InitiatingProcessFileName, InitiatingProcessCommandLine, RemoteUrl, RemoteIP, RemotePort
 | order by Timestamp asc
 ```
-
-<img width="1317" height="92" alt="Flag 11" src="https://github.com/user-attachments/assets/0652014c-42c4-4bf3-827d-133466fc1c60" />
+<img width="1170" height="82" alt="image" src="https://github.com/user-attachments/assets/aeda27fd-43ff-4b04-b832-513d2e79a2d2" />
 
 ---
 
-### Flag 12: CREDENTIAL ACCESS - Credential Theft Tool
+***FLAG 12: CREDENTIAL ACCESS - Credential Theft Tool***
 
-**Objective :**  
-Credential dumping tools extract authentication secrets from system memory. These tools are typically renamed to avoid signature-based detection.
+**Objective :** Credential dumping tools extract authentication secrets from system memory. These tools are typically renamed to avoid signature-based detection.
 
-**Flag Value :**  
-`mm.exe`
+**Flag Value :** `mm.exe`
 
-**KQL Query :**
 ```
 DeviceProcessEvents
 | where DeviceName == "azuki-sl"
 | where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
 | where ProcessCommandLine has_any (".exe")
 | where ProcessVersionInfoProductName has_any ("Mimikatz", "LaZagne", "lsassy", "nanodump", "ProcDump")
-| project Timestamp, DeviceName, FileName, ProcessVersionInfoProductName, ProcessCommandLine, InitiatingProcessCommandLine
+| project Timestamp, DeviceName, FileName, ProcessVersionInfoProductName, ProcessCommandLine
 | order by Timestamp asc
 ```
-
-<img width="820" height="190" alt="Flag 12" src="https://github.com/user-attachments/assets/f67f27ab-d79b-4ab4-887d-46615978bd63" />
+<img width="981" height="75" alt="image" src="https://github.com/user-attachments/assets/fb28222f-6813-4740-a594-3b9271414ef9" />
 
 ---
 
-### Flag 13: CREDENTIAL ACCESS - Memory Extraction Module
+***FLAG 13: CREDENTIAL ACCESS - Memory Extraction Module***
 
-**Objective :**  
-Credential dumping tools use specific modules to extract passwords from security subsystems. Documenting the exact technique used aids in detection engineering.
+**Objective :** Credential dumping tools use specific modules to extract passwords from security subsystems. Documenting the exact technique used aids in detection engineering.
 
-**Flag Value :**  
-`sekurlsa::logonpasswords`
+**Flag Value :** `sekurlsa::logonpasswords`
 
-**KQL Query :**
 ```
 DeviceProcessEvents
 | where DeviceName == "azuki-sl"
 | where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
 | where ProcessCommandLine has_any (".exe")
 | where ProcessVersionInfoProductName has_any ("Mimikatz", "LaZagne", "lsassy", "nanodump", "ProcDump")
-| project Timestamp, DeviceName, FileName, ProcessVersionInfoProductName, ProcessCommandLine, InitiatingProcessCommandLine
+| project Timestamp, DeviceName, FileName, ProcessVersionInfoProductName, ProcessCommandLine
 | order by Timestamp asc
 ```
-
-<img width="820" height="190" alt="Flag 13" src="https://github.com/user-attachments/assets/0a9e01b6-c5c7-4951-88b5-d0d76f2d8ae9" />
+<img width="981" height="75" alt="image" src="https://github.com/user-attachments/assets/fb28222f-6813-4740-a594-3b9271414ef9" />
 
 ---
 
-### Flag 14: COLLECTION - Data Staging Archive
+***FLAG 14: COLLECTION - Data Staging Archive***
 
-**Objective :**  
-Attackers compress stolen data for efficient exfiltration. The archive filename often includes dates or descriptive names for the attacker's organisation.
+**Objective :** Attackers compress stolen data for efficient exfiltration. The archive filename often includes dates or descriptive names for the attacker's organisation.
 
-**Flag Value :**  
-`export-data.zip`
+**Flag Value :** `export-data.zip`
 
-**KQL Query :**
 ```
 DeviceProcessEvents
 | where DeviceName == "azuki-sl"
 | where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
 | where ProcessCommandLine has_any (".zip")
-| project Timestamp, DeviceName, FileName, ProcessVersionInfoProductName, ProcessCommandLine, InitiatingProcessCommandLine
+| project Timestamp, DeviceName, FileName, ProcessCommandLine
 | order by Timestamp asc
 ```
-
-<img width="820" height="190" alt="Flag 14" src="https://github.com/user-attachments/assets/fc3718b6-8440-4c97-8558-69095ea8802b" />
+<img width="990" height="71" alt="image" src="https://github.com/user-attachments/assets/cbffe86e-5bbf-4b5c-b406-fbde312920a9" />
 
 ---
 
-### Flag 15: EXFILTRATION - Exfiltration Channel
+***FLAG 15: EXFILTRATION - Exfiltration Channel***
 
-**Objective :**  
-Cloud services with upload capabilities are frequently abused for data theft. Identifying the service helps with incident scope determination and potential data recovery.
+**Objective :** Cloud services with upload capabilities are frequently abused for data theft. Identifying the service helps with incident scope determination and potential data recovery.
 
-**Flag Value :**  
-`discord`
+**Flag Value :** `discord`
 
-**KQL Query :**
 ```
 DeviceNetworkEvents
 | where DeviceName == "azuki-sl"
 | where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
 | where InitiatingProcessAccountName == "kenji.sato"
 | where RemotePort == "443"
-| project Timestamp, DeviceName, InitiatingProcessFileName, InitiatingProcessCommandLine, RemoteUrl, RemoteIP, RemotePort
+| project Timestamp, DeviceName, InitiatingProcessCommandLine, RemoteUrl, RemoteIP, RemotePort
 | order by Timestamp asc
 ```
-
-<img width="1368" height="132" alt="image" src="https://github.com/user-attachments/assets/44ebc1bf-10ec-4d37-9dcc-4881e86ee900" />
+<img width="878" height="72" alt="image" src="https://github.com/user-attachments/assets/162e7ca2-acae-458f-8523-8d4d6c8a4670" />
 
 ---
 
-### Flag 16: ANTI-FORENSICS - Log Tampering
+***FLAG 16: ANTI-FORENSICS - Log Tampering***
 
-**Objective :**  
-Clearing event logs destroys forensic evidence and impedes investigation efforts. The order of log clearing can indicate attacker priorities and sophistication.
+**Objective :** Clearing event logs destroys forensic evidence and impedes investigation efforts. The order of log clearing can indicate attacker priorities and sophistication.
 
-**Flag Value :**  
-`Security`
+**Flag Value :** `Security`
 
-**KQL Query :**
 ```
 DeviceProcessEvents
 | where DeviceName == "azuki-sl"
@@ -358,20 +299,16 @@ DeviceProcessEvents
 | project Timestamp, DeviceName, FileName, ActionType, ProcessCommandLine
 | order by Timestamp asc 
 ```
-
-<img width="950" height="150" alt="Flag 16" src="https://github.com/user-attachments/assets/22001f03-dbfc-4be7-9e4c-c0bdfcc35820" />
+<img width="743" height="73" alt="image" src="https://github.com/user-attachments/assets/48aefb5c-e7ce-4078-a2d1-96bee5ef7042" />
 
 ---
 
-### Flag 17: IMPACT - Persistence Account
+***FLAG 17: IMPACT - Persistence Account***
 
-**Objective :**  
-Hidden administrator accounts provide alternative access for future operations. These accounts are often configured to avoid appearing in normal user interfaces.
+**Objective :** Hidden administrator accounts provide alternative access for future operations. These accounts are often configured to avoid appearing in normal user interfaces.
 
-**Flag Value :**  
-`support`
+**Flag Value :** `support`
 
-**KQL Query :**
 ```
 DeviceProcessEvents
 | where DeviceName == "azuki-sl"
@@ -380,20 +317,16 @@ DeviceProcessEvents
 | project Timestamp, DeviceName, FileName, ActionType, ProcessCommandLine
 | order by Timestamp asc 
 ```
-
-<img width="1242" height="221" alt="Flag 17" src="https://github.com/user-attachments/assets/35f3a6c6-073b-49d8-9fbd-9e4ee54bbd5b" />
+<img width="798" height="95" alt="image" src="https://github.com/user-attachments/assets/144a0987-fcc6-4efb-bba4-d139f00e4cd8" />
 
 ---
 
-### Flag 18: EXECUTION - Malicious Script
+***FLAG 18: EXECUTION - Malicious Script***
 
-**Objective :**  
-Attackers often use scripting languages to automate their attack chain. Identifying the initial attack script reveals the entry point and automation method used in the compromise.
+**Objective :** Attackers often use scripting languages to automate their attack chain. Identifying the initial attack script reveals the entry point and automation method used in the compromise.
 
-**Flag Value :**  
-`wupdate.ps1`
+**Flag Value :** `wupdate.ps1`
 
-**KQL Query :**
 ```
 DeviceFileEvents
 | where DeviceName == "azuki-sl"
@@ -404,20 +337,34 @@ DeviceFileEvents
 | project Timestamp, DeviceName, ActionType, FileName, FolderPath, InitiatingProcessCommandLine
 | order by Timestamp asc  
 ```
-
-<img width="980" height="260" alt="image" src="https://github.com/user-attachments/assets/1c205549-2aaf-472b-9e13-e57de1aba089" />
+<img width="1197" height="82" alt="image" src="https://github.com/user-attachments/assets/7584fead-ffa4-4af7-a122-2bc207ae89c6" />
 
 ---
 
-### Flag 19: LATERAL MOVEMENT - Secondary Target
+***FLAG 19: LATERAL MOVEMENT - Secondary Target***
 
-**Objective :**  
-Lateral movement targets are selected based on their access to sensitive data or network privileges. Identifying these targets reveals attacker objectives.
+**Objective :** Lateral movement targets are selected based on their access to sensitive data or network privileges. Identifying these targets reveals attacker objectives.
 
-**Flag Value :**  
-`10.1.0.188`
+**Flag Value :** `10.1.0.188`
 
-**KQL Query :**
+```
+DeviceNetworkEvents
+| where DeviceName == "azuki-sl"
+| where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
+| where InitiatingProcessCommandLine has_any ("cmdkey", "mstsc")
+| project Timestamp, DeviceName, ActionType, InitiatingProcessCommandLine
+| order by Timestamp desc 
+```
+<img width="667" height="72" alt="image" src="https://github.com/user-attachments/assets/fa97cb33-7f8b-4a6e-a3c4-9592e37a133c" />
+
+---
+
+***FLAG 20: LATERAL MOVEMENT - Remote Access Tool***
+
+**Objective :** Built-in remote access tools are preferred for lateral movement as they blend with legitimate administrative activity. This technique is harder to detect than custom tools.
+
+**Flag Value :** `mstsc.exe`
+
 ```
 DeviceNetworkEvents
 | where DeviceName == "azuki-sl"
@@ -426,29 +373,6 @@ DeviceNetworkEvents
 | project Timestamp, DeviceName, ActionType, InitiatingProcessCommandLine
 | order by Timestamp asc 
 ```
-
-<img width="700" height="130" alt="Flag 19" src="https://github.com/user-attachments/assets/cf46f30a-2f31-4291-9a41-ced4687182f9" />
-
----
-
-### LATERAL MOVEMENT - Remote Access Tool
-
-**Objective :**  
-Built-in remote access tools are preferred for lateral movement as they blend with legitimate administrative activity. This technique is harder to detect than custom tools.
-
-**Flag Value :**  
-`mstsc.exe`
-
-**KQL Query :**
-```
-DeviceNetworkEvents
-| where DeviceName == "azuki-sl"
-| where Timestamp between (datetime(2025-11-19) .. datetime(2025-11-20))
-| where InitiatingProcessCommandLine has_any ("cmdkey", "mstsc")
-| project Timestamp, DeviceName, ActionType, InitiatingProcessCommandLine
-| order by Timestamp asc 
-```
-
-<img width="700" height="130" alt="Flag 20" src="https://github.com/user-attachments/assets/ae741527-1481-4793-b551-ec38c7368ef4" />
+<img width="667" height="72" alt="image" src="https://github.com/user-attachments/assets/fa97cb33-7f8b-4a6e-a3c4-9592e37a133c" />
 
 ---
