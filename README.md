@@ -1,4 +1,4 @@
-# Threat-Huntung-Scenario-Port-Of-Entry
+# Threat-Hunting-Scenario-Port-Of-Entry
 
 **Report ID:** INC-2025-2211
 
